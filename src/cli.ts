@@ -5,6 +5,13 @@ import { saveTokens, TOKEN_PATH } from './auth/token-store.js';
 import { initRepo } from './repo/init.js';
 import { commitSnapshot } from './repo/commit.js';
 import { repoStatus } from './repo/status.js';
+import { repoLog } from './repo/log.js';
+import { repoDiff } from './repo/diff.js';
+import type { TrackRecord } from './spotify/playlists.js';
+
+/** Render a track by name, falling back to uri / id / a "(local track)" marker. */
+const trackLabel = (t: TrackRecord): string =>
+  t.name ?? t.uri ?? t.id ?? '(local track)';
 
 const errMsg = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
@@ -97,6 +104,54 @@ program
       }
     } catch (err) {
       console.error(`status failed: ${errMsg(err)}`);
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command('log')
+  .description('Show the snapshot commit chain (most recent first)')
+  .argument('[dir]', 'repo directory (default: current directory)')
+  .action(async (dir: string | undefined) => {
+    try {
+      const res = await repoLog(dir);
+      if (res.entries.length === 0) {
+        console.log('No commits yet.');
+        return;
+      }
+      for (const entry of res.entries) {
+        console.log(`${entry.hash}  ${entry.message}`);
+      }
+    } catch (err) {
+      console.error(`log failed: ${errMsg(err)}`);
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command('diff')
+  .description('Show added/removed/moved tracks between two snapshots')
+  .argument('[dir]', 'repo directory (default: current directory)')
+  .argument('[rev1]', 'base revision (default: HEAD~1)')
+  .argument('[rev2]', 'compare revision (default: HEAD)')
+  .action(async (dir: string | undefined, rev1: string | undefined, rev2: string | undefined) => {
+    try {
+      const res = await repoDiff(dir, rev1, rev2);
+      if (res.metaOnly) {
+        console.log('No track changes (metadata may differ).');
+        return;
+      }
+      for (const t of res.removed) {
+        console.log(`- ${trackLabel(t)}`);
+      }
+      for (const t of res.added) {
+        console.log(`+ ${trackLabel(t)}`);
+      }
+      for (const m of res.moved) {
+        console.log(`~ ${trackLabel(m.track)} (${m.fromIndex}→${m.toIndex})`);
+      }
+    } catch (err) {
+      console.error(`diff failed: ${errMsg(err)}`);
       process.exitCode = 1;
     }
   });
