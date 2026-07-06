@@ -2,6 +2,10 @@
 import { Command } from 'commander';
 import { runOAuthFlow, requireClientId } from './auth/oauth.js';
 import { saveTokens, TOKEN_PATH } from './auth/token-store.js';
+import { initRepo } from './repo/init.js';
+import { repoStatus } from './repo/status.js';
+
+const errMsg = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 // --- Spotify auth assumptions (consumed by T02) ---
 // The registered Spotify redirect URI defaults to http://127.0.0.1:8888/callback.
@@ -17,10 +21,6 @@ program
   .description('Spotify playlist-in-terminal CLI')
   .version('0.1.0');
 
-// Stub subcommands. Real implementations land in downstream tasks:
-//   login  -> T02 (Spotify PKCE auth)
-//   init   -> T04 (repo init)
-//   status -> T04 (live read)
 program
   .command('login')
   .description('Authenticate with Spotify (PKCE)')
@@ -38,16 +38,44 @@ program
 
 program
   .command('init')
-  .description('Initialize a spit repository in the current directory')
-  .action(() => {
-    console.log('spit init: not yet implemented');
+  .description('Snapshot a Spotify playlist into a new spit (git) repo')
+  .argument('<playlistId>', 'Spotify playlist id, spotify: URI, or open.spotify.com URL')
+  .argument('[dir]', 'target directory (default: the playlist name)')
+  .action(async (playlistId: string, dir: string | undefined) => {
+    try {
+      const res = await initRepo(playlistId, dir);
+      console.log(`\nInitialized spit repo for "${res.playlistName}"`);
+      console.log(`  path:   ${res.repoDir}`);
+      console.log(`  tracks: ${res.trackCount}`);
+      console.log(`  commit: ${res.commit}`);
+    } catch (err) {
+      console.error(`\ninit failed: ${errMsg(err)}`);
+      process.exitCode = 1;
+    }
   });
 
 program
   .command('status')
-  .description('Show live playback / sync status')
-  .action(() => {
-    console.log('spit status: not yet implemented');
+  .description('Show the local snapshot + git state of a spit repo')
+  .argument('[dir]', 'repo directory (default: current directory)')
+  .action(async (dir: string | undefined) => {
+    try {
+      const res = await repoStatus(dir);
+      console.log(`playlist: ${res.meta.name} (${res.meta.id})`);
+      console.log(`tracks:   ${res.trackCount}`);
+      console.log(`repo:     ${res.repoDir}`);
+      if (res.clean) {
+        console.log('git:      clean (working tree matches the last snapshot)');
+      } else {
+        console.log('git:      dirty — uncommitted changes:');
+        for (const line of res.porcelain.trimEnd().split('\n')) {
+          console.log(`  ${line}`);
+        }
+      }
+    } catch (err) {
+      console.error(`status failed: ${errMsg(err)}`);
+      process.exitCode = 1;
+    }
   });
 
 program.parse();
