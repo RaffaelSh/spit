@@ -1,4 +1,5 @@
 import { getAccessToken } from '../auth/token-store.js';
+import { retryWithBackoff } from './retry.js';
 
 export const API_BASE = 'https://api.spotify.com/v1';
 
@@ -45,6 +46,70 @@ function doGet(url: string, token: string): Promise<Response> {
       Authorization: `Bearer ${token}`,
       Accept: 'application/json',
     },
+  });
+}
+
+/**
+ * PUT a JSON body to a Spotify Web API resource (e.g. reorder/replace tracks).
+ * See {@link doWrite} for the shared 401-refresh + 429/5xx-backoff semantics.
+ */
+export function spotifyPut<T>(path: string, body: unknown): Promise<T> {
+  return writeRequest<T>('PUT', path, body);
+}
+
+/**
+ * POST a JSON body to a Spotify Web API resource (e.g. add tracks to a playlist).
+ * See {@link doWrite} for the shared 401-refresh + 429/5xx-backoff semantics.
+ */
+export function spotifyPost<T>(path: string, body: unknown): Promise<T> {
+  return writeRequest<T>('POST', path, body);
+}
+
+/**
+ * Shared write path: wraps the 401-refresh-and-retry-once request in
+ * retryWithBackoff so 429/5xx are transparently backed off (R010). Non-ok
+ * after retries throws SpotifyApiError; an empty 200/201 body returns `{}`.
+ */
+async function writeRequest<T>(method: 'PUT' | 'POST', path: string, body: unknown): Promise<T> {
+  const url = path.startsWith('http') ? path : `${API_BASE}${path}`;
+
+  const res = await retryWithBackoff(() => doWrite(method, url, body));
+
+  const text = await res.text();
+  if (!res.ok) {
+    throw new SpotifyApiError(res.status, formatError(res.status, text));
+  }
+  // 201 Created / 200 with an empty body must not crash JSON.parse.
+  return text.trim() === '' ? ({} as T) : (JSON.parse(text) as T);
+}
+
+/**
+ * Perform a single write with a transparent 401→force-refresh→retry-once seam,
+ * mirroring spotifyGet. The 401 retry runs at most once; 429/5xx are the caller's
+ * (retryWithBackoff) concern and are returned untouched for it to back off.
+ */
+async function doWrite(method: 'PUT' | 'POST', url: string, body: unknown): Promise<Response> {
+  let res = await sendWrite(method, url, await getAccessToken(), body);
+  if (res.status === 401) {
+    // Token rejected despite our clock — force one refresh and retry once.
+    res = await sendWrite(method, url, await getAccessToken(true), body);
+  }
+  return res;
+}
+
+function sendWrite(
+  method: 'PUT' | 'POST',
+  url: string,
+  token: string,
+  body: unknown,
+): Promise<Response> {
+  return fetch(url, {
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
   });
 }
 

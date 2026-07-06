@@ -8,7 +8,11 @@ export const AUTHORIZE_ENDPOINT = 'https://accounts.spotify.com/authorize';
 export const TOKEN_ENDPOINT = 'https://accounts.spotify.com/api/token';
 export const REDIRECT_URI = 'http://127.0.0.1:8888/callback';
 export const CALLBACK_PORT = 8888;
-export const SCOPES = 'playlist-read-private playlist-read-collaborative';
+// Write scopes (playlist-modify-*) are added in S05 so `spit push` can mutate playlists.
+// Tokens cached before S05 (login without these scopes) will 403 on push — the user must
+// re-run `spit login` to re-consent; that 403→re-login mapping is handled in T04.
+export const SCOPES =
+  'playlist-read-private playlist-read-collaborative playlist-modify-public playlist-modify-private';
 
 /** Shape returned by Spotify's token endpoint (fields we consume). */
 export interface TokenResponse {
