@@ -82,3 +82,32 @@ export function gitStatus(dir: string): Promise<string> {
 export function gitLog(dir: string): Promise<string> {
   return git(dir, ['log', '--oneline']);
 }
+
+/**
+ * True when there are staged (index vs HEAD) changes, false when the index is
+ * clean — the signal that decides "commit" vs "no-op snapshot".
+ *
+ * Deliberately NOT routed through the private `git()` helper: `git diff
+ * --cached --quiet` communicates its answer through the exit code (0 = no
+ * staged changes, 1 = staged changes exist), and `git()` would misread the
+ * normal exit-1 as a GitError. We inspect `.code` ourselves and only raise
+ * GitError on a genuine failure (exit ≥ 2, or a missing binary).
+ */
+export async function gitHasStagedChanges(dir: string): Promise<boolean> {
+  const args = ['diff', '--cached', '--quiet'];
+  try {
+    await execFileAsync('git', args, { cwd: dir, maxBuffer: 64 * 1024 * 1024 });
+    return false; // exit 0 ⇒ no staged changes
+  } catch (err) {
+    const e = err as { code?: number | string; stderr?: string | Buffer; message?: string };
+    if (e.code === 1) return true; // exit 1 ⇒ staged changes exist
+    const stderr = e.stderr != null ? e.stderr.toString() : (e.message ?? '');
+    throw new GitError(args, e.code ?? null, stderr);
+  }
+}
+
+/** Short (abbreviated) hash of HEAD — a clean commit id for CLI output. */
+export async function gitShortHead(dir: string): Promise<string> {
+  const stdout = await git(dir, ['rev-parse', '--short', 'HEAD']);
+  return stdout.trim();
+}

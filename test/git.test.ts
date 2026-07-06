@@ -3,7 +3,16 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { gitInit, gitAdd, gitCommit, gitStatus, gitLog, GitError } from '../src/git/git.js';
+import {
+  gitInit,
+  gitAdd,
+  gitCommit,
+  gitStatus,
+  gitLog,
+  gitHasStagedChanges,
+  gitShortHead,
+  GitError,
+} from '../src/git/git.js';
 
 async function scratch(): Promise<string> {
   return mkdtemp(join(tmpdir(), 'spit-git-'));
@@ -68,6 +77,39 @@ test('gitAdd of a nonexistent path raises GitError', async () => {
   try {
     await gitInit(dir);
     await assert.rejects(() => gitAdd(dir, ['does-not-exist.jsonl']), GitError);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// gitHasStagedChanges must read the exit-1 "has changes" case as `true`, not as
+// a failure, and flip back to `false` once those changes are committed.
+test('gitHasStagedChanges is true when staged, false after commit', async () => {
+  const dir = await scratch();
+  try {
+    await gitInit(dir);
+    await writeFile(join(dir, 'playlist.jsonl'), '{"id":"t1"}\n', 'utf8');
+    await gitAdd(dir, ['playlist.jsonl']);
+    assert.equal(await gitHasStagedChanges(dir), true, 'staged file should register');
+
+    await gitCommit(dir, 'Initial snapshot');
+    assert.equal(await gitHasStagedChanges(dir), false, 'clean index after commit');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// gitShortHead returns a clean abbreviated hash for CLI output.
+test('gitShortHead returns an abbreviated commit hash', async () => {
+  const dir = await scratch();
+  try {
+    await gitInit(dir);
+    await writeFile(join(dir, 'meta.json'), '{"id":"p1"}\n', 'utf8');
+    await gitAdd(dir, ['meta.json']);
+    await gitCommit(dir, 'Initial snapshot');
+
+    const short = await gitShortHead(dir);
+    assert.match(short, /^[0-9a-f]{7,}$/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
