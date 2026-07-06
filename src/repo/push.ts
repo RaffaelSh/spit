@@ -46,12 +46,17 @@ export interface PushIo {
   post: (playlistId: string, uris: string[]) => Promise<{ snapshot_id?: string }>;
 }
 
-/** Options for {@link pushSnapshot}. `confirm` receives the change summary so the CLI can pre-warn. */
+/**
+ * Options for {@link pushSnapshot}. `confirm` receives the change summary AND
+ * the live playlist name so the CLI (T05) can render the full pre-warning line
+ * ("...moved to \"<name>\"") before the interactive [y/N] prompt. T04/T05
+ * co-own this contract.
+ */
 export interface PushOptions {
   commit?: string;
   force?: boolean;
   enableWrites?: boolean;
-  confirm?: (summary: ChangeSummary) => Promise<boolean>;
+  confirm?: (summary: ChangeSummary, playlistName: string) => Promise<boolean>;
 }
 
 const defaultIo: PushIo = {
@@ -236,7 +241,7 @@ export async function pushSnapshot(
 
   if (!opts.force) {
     const confirm = opts.confirm ?? (() => Promise.resolve(false));
-    const ok = await confirm(summary);
+    const ok = await confirm(summary, liveMeta.name);
     if (!ok) throw new PushError('Aborted.');
   }
 

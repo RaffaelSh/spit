@@ -11,6 +11,8 @@ import { repoBranch } from './repo/branch.js';
 import { repoMerge } from './repo/merge.js';
 import { repoCheckout } from './repo/checkout.js';
 import { repoRevert } from './repo/revert.js';
+import { pushSnapshot, PushError } from './repo/push.js';
+import type { ChangeSummary } from './repo/push.js';
 import type { TrackRecord } from './spotify/playlists.js';
 
 /** Render a track by name, falling back to uri / id / a "(local track)" marker. */
@@ -237,5 +239,62 @@ program
       process.exitCode = 1;
     }
   });
+
+/** Read one line from stdin, resolving true only for an exact 'y'/'Y'. */
+const promptYes = (question: string): Promise<boolean> =>
+  new Promise((resolvePrompt) => {
+    // Local import keeps readline off the hot path for every non-push command.
+    import('node:readline').then(({ createInterface }) => {
+      const rl = createInterface({ input: process.stdin, output: process.stdout });
+      rl.question(question, (answer) => {
+        rl.close();
+        const a = answer.trim();
+        resolvePrompt(a === 'y' || a === 'Y');
+      });
+    });
+  });
+
+/** Render the R008 pre-warning: "This push will change N tracks: +A added, -R removed, ~M moved to "<name>". Continue? [y/N] " */
+const pushWarning = (s: ChangeSummary, playlistName: string): string => {
+  const n = s.added + s.removed + s.moved;
+  return (
+    `This push will change ${n} tracks: ` +
+    `+${s.added} added, -${s.removed} removed, ~${s.moved} moved ` +
+    `to "${playlistName}". Continue? [y/N] `
+  );
+};
+
+program
+  .command('push')
+  .description('Write a committed snapshot back to the live Spotify playlist (opt-in, display-only by default)')
+  .argument('[dir]', 'repo directory (default: current directory)')
+  .option('--commit <hash>', 'commit to push (default: HEAD)')
+  .option('--enable-writes', 'one-time opt-in: enable write-back for this repo')
+  .option('--yes', 'skip the confirmation prompt (for CI)')
+  .action(
+    async (
+      dir: string | undefined,
+      opts: { commit?: string; enableWrites?: boolean; yes?: boolean },
+    ) => {
+      try {
+        const res = await pushSnapshot(dir, {
+          commit: opts.commit,
+          enableWrites: opts.enableWrites,
+          force: opts.yes,
+          confirm: (summary, playlistName) => promptYes(pushWarning(summary, playlistName)),
+        });
+        console.log(
+          `Pushed ${res.trackCount} tracks to "${res.playlistName}" (${res.batches} batch(es)).`,
+        );
+      } catch (err) {
+        if (err instanceof PushError) {
+          console.error(`push failed: ${err.message}`);
+        } else {
+          console.error(`push failed: ${errMsg(err)}`);
+        }
+        process.exitCode = 1;
+      }
+    },
+  );
 
 program.parse();
