@@ -147,6 +147,17 @@ export function gitCheckout(dir: string, ref: string): Promise<string> {
 }
 
 /**
+ * Current branch name via `git rev-parse --abbrev-ref HEAD`, trimmed. Returns the
+ * literal string `HEAD` when the working tree is in detached-HEAD state (e.g.
+ * after checking out a bare commit) — the repo layer uses that to raise the
+ * detached-HEAD advisory.
+ */
+export async function gitCurrentBranch(dir: string): Promise<string> {
+  const stdout = await git(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
+  return stdout.trim();
+}
+
+/**
  * Merge `branchName` into the current branch. Deliberately NOT routed through the
  * private `git()` helper: a merge conflict exits 1, and `git()` would misread
  * that normal outcome as a GitError. We inspect `.code` ourselves:
