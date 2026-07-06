@@ -1,0 +1,25 @@
+{
+  "name": "spit",
+  "version": "0.1.0",
+  "description": "Spotify playlist-in-terminal CLI",
+  "type": "module",
+  "bin": {
+    "spit": "dist/cli.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "test": "node --import tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}
