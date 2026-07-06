@@ -1,18 +1,43 @@
 {
   "name": "spit",
   "version": "0.1.0",
-  "description": "Spotify playlist-in-terminal CLI",
+  "description": "Git style version control for Spotify playlists, right in your terminal.",
   "type": "module",
   "bin": {
     "spit": "dist/cli.js"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "spotify",
+    "playlist",
+    "cli",
+    "git",
+    "version-control",
+    "music"
+  ],
+  "author": "Raffael Sheikh",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RaffaelSh/spit.git"
+  },
+  "bugs": {
+    "url": "https://github.com/RaffaelSh/spit/issues"
+  },
+  "homepage": "https://github.com/RaffaelSh/spit#readme",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/cli.ts",
-    "test": "node --import tsx --test test/*.test.ts"
+    "pretest": "tsc",
+    "test": "node --import tsx --test test/*.test.ts",
+    "prepare": "tsc"
   },
   "dependencies": {
     "commander": "^12.1.0"
