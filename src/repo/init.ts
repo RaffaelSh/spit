@@ -1,8 +1,8 @@
 import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { getPlaylist, getPlaylistTracks } from '../spotify/playlists.js';
-import { serializePlaylist } from '../snapshot/serialize.js';
-import { gitInit, gitAdd, gitCommit, gitLog } from '../git/git.js';
+import { gitInit } from '../git/git.js';
+import { snapshotAndCommit } from './snapshot-commit.js';
 
 /** Structured outcome of `spit init`, printed by the CLI layer. */
 export interface InitResult {
@@ -53,13 +53,11 @@ export async function initRepo(playlistIdInput: string, dir?: string): Promise<I
   const repoDir = resolve(dir ?? (sanitizeDirName(meta.name) || meta.id));
   await mkdir(repoDir, { recursive: true });
 
-  await serializePlaylist(meta, tracks, repoDir);
-
   await gitInit(repoDir);
-  await gitAdd(repoDir, ['playlist.jsonl', 'meta.json']);
-  await gitCommit(repoDir, `Initial snapshot: ${meta.name}`);
 
-  const commit = (await gitLog(repoDir)).split('\n')[0]?.trim() ?? '';
+  // A fresh repo's staged snapshot always differs from the empty HEAD, so the
+  // helper's no-op branch is never taken here — `changed` is always true.
+  const { commit } = await snapshotAndCommit(repoDir, meta, tracks, `Initial snapshot: ${meta.name}`);
 
   return { repoDir, playlistName: meta.name, trackCount: tracks.length, commit };
 }

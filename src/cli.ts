@@ -3,6 +3,7 @@ import { Command } from 'commander';
 import { runOAuthFlow, requireClientId } from './auth/oauth.js';
 import { saveTokens, TOKEN_PATH } from './auth/token-store.js';
 import { initRepo } from './repo/init.js';
+import { commitSnapshot } from './repo/commit.js';
 import { repoStatus } from './repo/status.js';
 
 const errMsg = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -50,6 +51,28 @@ program
       console.log(`  commit: ${res.commit}`);
     } catch (err) {
       console.error(`\ninit failed: ${errMsg(err)}`);
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command('commit')
+  .description('Re-snapshot the tracked playlist and record a new revision if it changed')
+  .argument('[dir]', 'repo directory (default: current directory)')
+  .requiredOption('-m, --message <message>', 'commit message')
+  .action(async (dir: string | undefined, opts: { message: string }) => {
+    try {
+      const res = await commitSnapshot(dir, { message: opts.message });
+      if (!res.changed) {
+        console.log('No changes since last snapshot.');
+        return;
+      }
+      console.log(`\nCommitted new snapshot for "${res.playlistName}"`);
+      console.log(`  path:   ${res.repoDir}`);
+      console.log(`  tracks: ${res.trackCount}`);
+      console.log(`  commit: ${res.commit}`);
+    } catch (err) {
+      console.error(`\ncommit failed: ${errMsg(err)}`);
       process.exitCode = 1;
     }
   });
