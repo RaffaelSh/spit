@@ -1,6 +1,13 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
 import { runOAuthFlow, requireClientId } from './auth/oauth.js';
+import {
+  persistClientId,
+  resolveClientId,
+  readConfig,
+  configPath,
+  SPOTIFY_CLIENT_ID_ENV,
+} from './auth/config.js';
 import { saveTokens, TOKEN_PATH } from './auth/token-store.js';
 import { initRepo } from './repo/init.js';
 import { commitSnapshot } from './repo/commit.js';
@@ -22,12 +29,11 @@ const trackLabel = (t: TrackRecord): string =>
 
 const errMsg = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
-// --- Spotify auth assumptions (consumed by T02) ---
+// --- Spotify auth assumptions ---
 // The registered Spotify redirect URI defaults to http://127.0.0.1:8888/callback.
-// The Spotify Client ID is supplied via the SPOTIFY_CLIENT_ID environment variable.
-// PKCE is used, so no client secret is required.
+// The client id comes from the SPOTIFY_CLIENT_ID env var or the persisted
+// ~/.spit/config.json (see src/auth/config.ts). PKCE is used, so no secret.
 export const DEFAULT_REDIRECT_URI = 'http://127.0.0.1:8888/callback';
-export const SPOTIFY_CLIENT_ID_ENV = 'SPOTIFY_CLIENT_ID';
 
 const program = new Command();
 
@@ -42,12 +48,54 @@ program
   .action(async () => {
     try {
       const clientId = requireClientId();
+      // Persist so a later token refresh works even if this shell no longer
+      // exports SPOTIFY_CLIENT_ID (the durability fix — token outlives the env).
+      persistClientId(clientId);
       const tokens = await runOAuthFlow(clientId);
       await saveTokens(tokens);
       console.log(`\nLogin successful. Token cached at ${TOKEN_PATH} (0600).`);
+      console.log(`Client id remembered in ${configPath()} for future refreshes.`);
     } catch (err) {
       console.error(`\nlogin failed: ${err instanceof Error ? err.message : String(err)}`);
       process.exitCode = 1;
+    }
+  });
+
+const configCmd = program
+  .command('config')
+  .description('Inspect or set persistent spit configuration (~/.spit/config.json)');
+
+configCmd
+  .command('set-client-id')
+  .description('Persist your Spotify app client id so login and refresh survive without env vars')
+  .argument('<id>', 'Spotify application client id')
+  .action((id: string) => {
+    const trimmed = id.trim();
+    if (trimmed === '') {
+      console.error('config failed: client id must not be empty.');
+      process.exitCode = 1;
+      return;
+    }
+    persistClientId(trimmed);
+    console.log(`Saved client id to ${configPath()} (0600).`);
+  });
+
+configCmd
+  .command('show')
+  .description('Show the resolved client id and where it comes from')
+  .action(() => {
+    const env = process.env[SPOTIFY_CLIENT_ID_ENV];
+    const stored = readConfig().clientId;
+    const resolved = resolveClientId();
+    const mask = (v: string): string => (v.length <= 6 ? '***' : `${v.slice(0, 4)}…${v.slice(-2)}`);
+    console.log(`config file: ${configPath()}`);
+    console.log(`env ${SPOTIFY_CLIENT_ID_ENV}: ${env && env.trim() !== '' ? mask(env.trim()) : '(unset)'}`);
+    console.log(`stored client id: ${typeof stored === 'string' && stored !== '' ? mask(stored) : '(none)'}`);
+    if (resolved) {
+      const source = env && env.trim() !== '' ? 'env' : 'config file';
+      console.log(`resolved: ${mask(resolved)} (from ${source})`);
+    } else {
+      console.log('resolved: (none) — run `spit config set-client-id <id>` or set the env var.');
     }
   });
 

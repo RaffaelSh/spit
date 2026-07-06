@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import { platform } from 'node:os';
 import { URL } from 'node:url';
 import { generateVerifier, challengeFromVerifier, generateState } from './pkce.js';
+import { resolveClientId, SPOTIFY_CLIENT_ID_ENV } from './config.js';
 
 export const AUTHORIZE_ENDPOINT = 'https://accounts.spotify.com/authorize';
 export const TOKEN_ENDPOINT = 'https://accounts.spotify.com/api/token';
@@ -22,14 +23,20 @@ export interface TokenResponse {
   token_type: string;
 }
 
-/** Read the Spotify client id from the environment, or throw an actionable error. */
+/**
+ * Resolve the Spotify client id (env var, then persisted ~/.spit/config.json),
+ * or throw an actionable error naming both ways to set it. Persisting the id at
+ * login is what lets token refresh keep working in a shell that no longer
+ * exports SPOTIFY_CLIENT_ID (see src/auth/config.ts).
+ */
 export function requireClientId(): string {
-  const id = process.env.SPOTIFY_CLIENT_ID;
-  if (!id || id.trim() === '') {
+  const id = resolveClientId();
+  if (!id) {
     throw new Error(
-      'SPOTIFY_CLIENT_ID is not set. Export your Spotify app client id, e.g.\n' +
-        '  export SPOTIFY_CLIENT_ID=<your-app-client-id>\n' +
-        'and ensure the redirect URI http://127.0.0.1:8888/callback is registered on the app.',
+      'No Spotify client id configured. Set it once with:\n' +
+        '  spit config set-client-id <your-app-client-id>\n' +
+        `or export ${SPOTIFY_CLIENT_ID_ENV}=<your-app-client-id> in your shell.\n` +
+        'Then ensure the redirect URI http://127.0.0.1:8888/callback is registered on the app.',
     );
   }
   return id;
