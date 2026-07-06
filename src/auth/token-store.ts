@@ -104,14 +104,17 @@ async function refresh(stored: StoredToken): Promise<StoredToken> {
 /**
  * Return a valid access token, transparently refreshing an expired one.
  * The single token seam consumed by downstream commands (T03+).
+ * Pass `forceRefresh` to refresh even when the cached token looks unexpired —
+ * used by the API client's 401→refresh→retry path when Spotify rejects a
+ * token our clock still considers valid (revocation, clock skew).
  * Throws ReauthRequiredError when no cache exists or the grant is dead.
  */
-export async function getAccessToken(): Promise<string> {
+export async function getAccessToken(forceRefresh = false): Promise<string> {
   const stored = await loadTokens();
   if (!stored) {
     throw new ReauthRequiredError('Not logged in. Run `spit login` first.');
   }
-  if (Date.now() < stored.expires_at - EXPIRY_SKEW_MS) {
+  if (!forceRefresh && Date.now() < stored.expires_at - EXPIRY_SKEW_MS) {
     return stored.access_token;
   }
   const refreshed = await refresh(stored);
