@@ -11,6 +11,7 @@ import { repoBranch } from './repo/branch.js';
 import { repoMerge } from './repo/merge.js';
 import { repoCheckout } from './repo/checkout.js';
 import { repoRevert } from './repo/revert.js';
+import { repoPull } from './repo/pull.js';
 import { pushSnapshot, PushError } from './repo/push.js';
 import type { ChangeSummary } from './repo/push.js';
 import type { TrackRecord } from './spotify/playlists.js';
@@ -86,6 +87,27 @@ program
       console.log(`  commit: ${res.commit}`);
     } catch (err) {
       console.error(`\ncommit failed: ${errMsg(err)}`);
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command('pull')
+  .description('Re-read the live Spotify playlist into the working tree (no commit)')
+  .argument('[dir]', 'repo directory (default: current directory)')
+  .action(async (dir: string | undefined) => {
+    try {
+      const res = await repoPull(dir);
+      if (!res.changed) {
+        console.log(`Already up to date with "${res.playlistName}" (${res.trackCount} tracks).`);
+        return;
+      }
+      console.log(`\nPulled live state of "${res.playlistName}" into the working tree.`);
+      console.log(`  path:   ${res.repoDir}`);
+      console.log(`  tracks: ${res.trackCount}`);
+      console.log('  next:   review with `spit diff` / `spit status`, then `spit commit -m ...`.');
+    } catch (err) {
+      console.error(`pull failed: ${errMsg(err)}`);
       process.exitCode = 1;
     }
   });
