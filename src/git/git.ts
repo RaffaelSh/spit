@@ -239,3 +239,74 @@ export async function gitRevert(dir: string, ref: string): Promise<string> {
     throw err;
   }
 }
+
+/**
+ * Create a lightweight tag at HEAD (`git tag <name>`). A duplicate tag name exits
+ * non-zero → GitError carrying git's stderr, which the repo layer turns into a
+ * readable "tag already exists" message.
+ */
+export function gitTag(dir: string, name: string): Promise<string> {
+  return git(dir, ['tag', name]);
+}
+
+/** List tag names (`git tag --list`), newest git-sort order, blanks stripped. */
+export async function gitTagList(dir: string): Promise<string[]> {
+  const out = await git(dir, ['tag', '--list']);
+  return out
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+}
+
+/**
+ * Save the working tree to a new stash entry (`git stash push`). git internally
+ * writes stash commits with the ambient identity, so — like gitCommit — retry once
+ * with a fallback identity on a config-less repo. With nothing to stash git prints
+ * "No local changes to save" and exits 0 (not an error); the repo layer reads that.
+ */
+export async function gitStash(dir: string): Promise<string> {
+  try {
+    return await git(dir, ['stash', 'push']);
+  } catch (err) {
+    if (err instanceof GitError && IDENTITY_RE.test(err.stderr)) {
+      return git(dir, [...FALLBACK_IDENTITY, 'stash', 'push']);
+    }
+    throw err;
+  }
+}
+
+/**
+ * Restore and drop the most recent stash entry (`git stash pop`). An empty stash
+ * or a conflicting pop exits non-zero → GitError with git's stderr (the repo layer
+ * makes it readable).
+ */
+export function gitStashPop(dir: string): Promise<string> {
+  return git(dir, ['stash', 'pop']);
+}
+
+/** List stash entries (`git stash list`), blanks stripped. */
+export async function gitStashList(dir: string): Promise<string[]> {
+  const out = await git(dir, ['stash', 'list']);
+  return out
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+}
+
+/**
+ * Rebase the current branch onto `upstream` (`git rebase <upstream>`). Replaying
+ * commits can hit the config-less identity case, so retry once with a fallback
+ * identity like gitCommit. A rebase that conflicts exits non-zero and leaves the
+ * rebase in progress → GitError with git's stderr; spit does NOT auto-resolve
+ * (same posture as merge), so the caller surfaces git's own guidance.
+ */
+export async function gitRebase(dir: string, upstream: string): Promise<string> {
+  try {
+    return await git(dir, ['rebase', upstream]);
+  } catch (err) {
+    if (err instanceof GitError && IDENTITY_RE.test(err.stderr)) {
+      return git(dir, [...FALLBACK_IDENTITY, 'rebase', upstream]);
+    }
+    throw err;
+  }
+}

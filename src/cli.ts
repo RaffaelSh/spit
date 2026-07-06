@@ -18,6 +18,9 @@ import { repoBranch } from './repo/branch.js';
 import { repoMerge } from './repo/merge.js';
 import { repoCheckout } from './repo/checkout.js';
 import { repoRevert } from './repo/revert.js';
+import { repoTag } from './repo/tag.js';
+import { repoStash } from './repo/stash.js';
+import { repoRebase } from './repo/rebase.js';
 import { repoPull } from './repo/pull.js';
 import { pushSnapshot } from './repo/push.js';
 import type { ChangeSummary } from './repo/push.js';
@@ -306,6 +309,74 @@ program
       console.log('  note:     restored the local snapshot only — Spotify unchanged until `spit push`.');
     } catch (err) {
       reportError('revert failed', err);
+    }
+  });
+
+program
+  .command('tag')
+  .description('Tag the current snapshot, or list tags when no name is given')
+  .argument('[name]', 'tag name to create (omit to list existing tags)')
+  .argument('[dir]', 'repo directory (default: current directory)')
+  .action(async (name: string | undefined, dir: string | undefined) => {
+    try {
+      const res = await repoTag(dir, name);
+      if (res.created) {
+        console.log(`Tagged current snapshot as "${res.created}" in "${res.playlistName}".`);
+      }
+      if (res.tags.length === 0) {
+        console.log('No tags yet.');
+      } else {
+        console.log(res.created ? 'All tags:' : 'Tags:');
+        for (const t of res.tags) console.log(`  ${t}`);
+      }
+    } catch (err) {
+      reportError('tag failed', err);
+    }
+  });
+
+const stashCmd = program
+  .command('stash')
+  .description('Shelve uncommitted snapshot edits; `spit stash` saves, `spit stash pop` restores')
+  .argument('[dir]', 'repo directory (default: current directory)')
+  .action(async (dir: string | undefined) => {
+    try {
+      const res = await repoStash(dir, 'save');
+      if (res.noOp) {
+        console.log('Nothing to stash — the working tree is clean.');
+        return;
+      }
+      console.log(
+        `Stashed uncommitted changes in "${res.playlistName}". Restore with \`spit stash pop\`.`,
+      );
+    } catch (err) {
+      reportError('stash failed', err);
+    }
+  });
+
+stashCmd
+  .command('pop')
+  .description('Restore the most recently stashed snapshot edits')
+  .argument('[dir]', 'repo directory (default: current directory)')
+  .action(async (dir: string | undefined) => {
+    try {
+      const res = await repoStash(dir, 'pop');
+      console.log(`Restored stashed changes into "${res.playlistName}".`);
+    } catch (err) {
+      reportError('stash pop failed', err);
+    }
+  });
+
+program
+  .command('rebase')
+  .description('Replay the current branch onto another ref (git rebase; no auto-resolve)')
+  .argument('<upstream>', 'branch, tag, or commit to rebase onto')
+  .argument('[dir]', 'repo directory (default: current directory)')
+  .action(async (upstream: string, dir: string | undefined) => {
+    try {
+      const res = await repoRebase(dir, upstream);
+      console.log(`Rebased "${res.playlistName}" onto ${upstream} (HEAD now ${res.commit}).`);
+    } catch (err) {
+      reportError('rebase failed', err);
     }
   });
 
