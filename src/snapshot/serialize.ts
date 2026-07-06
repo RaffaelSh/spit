@@ -19,8 +19,12 @@ export interface SnapshotPaths {
  * Serialize a track to a single JSONL line with a FIXED field order.
  * The key order is written explicitly here (not derived from object insertion
  * upstream) so the same logical track always yields byte-identical output.
+ *
+ * Exported as the canonical per-track line form: push (S05) compares a live
+ * playlist against a committed snapshot line-for-line, and both sides must
+ * agree on these exact bytes.
  */
-function serializeTrack(track: TrackRecord): string {
+export function serializeTrackLine(track: TrackRecord): string {
   return JSON.stringify({
     id: track.id ?? null,
     uri: track.uri ?? null,
@@ -51,7 +55,7 @@ export async function serializePlaylist(
   const metaPath = join(dir, 'meta.json');
 
   // Each line newline-terminated; an empty playlist yields an empty file.
-  const jsonl = tracks.map((t) => serializeTrack(t) + '\n').join('');
+  const jsonl = tracks.map((t) => serializeTrackLine(t) + '\n').join('');
   await writeFile(jsonlPath, jsonl, 'utf8');
 
   const metaOut: SnapshotMeta = {
@@ -62,4 +66,21 @@ export async function serializePlaylist(
   await writeFile(metaPath, JSON.stringify(metaOut, null, 2) + '\n', 'utf8');
 
   return { jsonlPath, metaPath };
+}
+
+/**
+ * Parse a raw playlist.jsonl blob back into an ordered TrackRecord[] — the exact
+ * inverse of serializePlaylist's line output. Splits on '\n' and drops empty
+ * lines, so both a trailing-newline blob and the empty-playlist empty file yield
+ * the correct array (a trailing '\n' produces one empty trailing segment that is
+ * dropped; '' yields []). Rows are returned in file (playlist) order.
+ *
+ * This mirrors parseSnapshot in diff.ts; the raw line IS the unit of identity
+ * (D002/MEM011) so no synthetic track key is invented.
+ */
+export function deserializePlaylist(jsonl: string): TrackRecord[] {
+  return jsonl
+    .split('\n')
+    .filter((line) => line.length > 0)
+    .map((line) => JSON.parse(line) as TrackRecord);
 }
