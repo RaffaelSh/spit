@@ -14,6 +14,39 @@ export class SpotifyApiError extends Error {
 }
 
 /**
+ * Raised when the request never reached Spotify (DNS failure, refused/reset
+ * connection, offline). Carries the low-level cause code (ENOTFOUND, …) when the
+ * runtime exposes one, so the diagnostic layer can point at connectivity rather
+ * than at Spotify. Distinct from SpotifyApiError, which always has an HTTP status.
+ */
+export class SpotifyNetworkError extends Error {
+  readonly cause?: unknown;
+  constructor(message: string, cause?: unknown) {
+    super(message);
+    this.name = 'SpotifyNetworkError';
+    this.cause = cause;
+  }
+}
+
+/**
+ * fetch() that turns a transport-level rejection (no HTTP response was received)
+ * into a typed SpotifyNetworkError. An HTTP error status is NOT a rejection —
+ * those still resolve and are handled by the status checks downstream.
+ */
+async function safeFetch(url: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch (err) {
+    const code =
+      err && typeof err === 'object' && 'cause' in err && err.cause
+        ? (err.cause as { code?: string }).code
+        : undefined;
+    const suffix = code ? ` (${code})` : '';
+    throw new SpotifyNetworkError(`could not reach Spotify${suffix}`, err);
+  }
+}
+
+/**
  * GET a Spotify Web API resource and parse JSON.
  *
  * `pathOrUrl` is either an API-relative path (e.g. "/playlists/{id}") or an
@@ -41,7 +74,7 @@ export async function spotifyGet<T>(pathOrUrl: string): Promise<T> {
 }
 
 function doGet(url: string, token: string): Promise<Response> {
-  return fetch(url, {
+  return safeFetch(url, {
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: 'application/json',
@@ -103,7 +136,7 @@ function sendWrite(
   token: string,
   body: unknown,
 ): Promise<Response> {
-  return fetch(url, {
+  return safeFetch(url, {
     method,
     headers: {
       Authorization: `Bearer ${token}`,

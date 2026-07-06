@@ -19,15 +19,25 @@ import { repoMerge } from './repo/merge.js';
 import { repoCheckout } from './repo/checkout.js';
 import { repoRevert } from './repo/revert.js';
 import { repoPull } from './repo/pull.js';
-import { pushSnapshot, PushError } from './repo/push.js';
+import { pushSnapshot } from './repo/push.js';
 import type { ChangeSummary } from './repo/push.js';
 import type { TrackRecord } from './spotify/playlists.js';
+import { describeSpotifyError } from './spotify/errors.js';
 
 /** Render a track by name, falling back to uri / id / a "(local track)" marker. */
 const trackLabel = (t: TrackRecord): string =>
   t.name ?? t.uri ?? t.id ?? '(local track)';
 
-const errMsg = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+/**
+ * Print an actionable one-line failure for `err` and set the class-specific exit
+ * code (auth/forbidden/not-found/rate-limit/network/general). The single failure
+ * seam every command's catch routes through.
+ */
+const reportError = (prefix: string, err: unknown): void => {
+  const { message, exitCode } = describeSpotifyError(err);
+  console.error(`${prefix}: ${message}`);
+  process.exitCode = exitCode;
+};
 
 // --- Spotify auth assumptions ---
 // The registered Spotify redirect URI defaults to http://127.0.0.1:8888/callback.
@@ -56,8 +66,7 @@ program
       console.log(`\nLogin successful. Token cached at ${TOKEN_PATH} (0600).`);
       console.log(`Client id remembered in ${configPath()} for future refreshes.`);
     } catch (err) {
-      console.error(`\nlogin failed: ${err instanceof Error ? err.message : String(err)}`);
-      process.exitCode = 1;
+      reportError('login failed', err);
     }
   });
 
@@ -112,8 +121,7 @@ program
       console.log(`  tracks: ${res.trackCount}`);
       console.log(`  commit: ${res.commit}`);
     } catch (err) {
-      console.error(`\ninit failed: ${errMsg(err)}`);
-      process.exitCode = 1;
+      reportError('init failed', err);
     }
   });
 
@@ -134,8 +142,7 @@ program
       console.log(`  tracks: ${res.trackCount}`);
       console.log(`  commit: ${res.commit}`);
     } catch (err) {
-      console.error(`\ncommit failed: ${errMsg(err)}`);
-      process.exitCode = 1;
+      reportError('commit failed', err);
     }
   });
 
@@ -155,8 +162,7 @@ program
       console.log(`  tracks: ${res.trackCount}`);
       console.log('  next:   review with `spit diff` / `spit status`, then `spit commit -m ...`.');
     } catch (err) {
-      console.error(`pull failed: ${errMsg(err)}`);
-      process.exitCode = 1;
+      reportError('pull failed', err);
     }
   });
 
@@ -179,8 +185,7 @@ program
         }
       }
     } catch (err) {
-      console.error(`status failed: ${errMsg(err)}`);
-      process.exitCode = 1;
+      reportError('status failed', err);
     }
   });
 
@@ -199,8 +204,7 @@ program
         console.log(`${entry.hash}  ${entry.message}`);
       }
     } catch (err) {
-      console.error(`log failed: ${errMsg(err)}`);
-      process.exitCode = 1;
+      reportError('log failed', err);
     }
   });
 
@@ -227,8 +231,7 @@ program
         console.log(`~ ${trackLabel(m.track)} (${m.fromIndex}→${m.toIndex})`);
       }
     } catch (err) {
-      console.error(`diff failed: ${errMsg(err)}`);
-      process.exitCode = 1;
+      reportError('diff failed', err);
     }
   });
 
@@ -242,8 +245,7 @@ program
       const res = await repoBranch(dir, name);
       console.log(`Created branch "${res.branch}" in "${res.playlistName}"`);
     } catch (err) {
-      console.error(`branch failed: ${errMsg(err)}`);
-      process.exitCode = 1;
+      reportError('branch failed', err);
     }
   });
 
@@ -267,8 +269,7 @@ program
       }
       process.exitCode = 1;
     } catch (err) {
-      console.error(`merge failed: ${errMsg(err)}`);
-      process.exitCode = 1;
+      reportError('merge failed', err);
     }
   });
 
@@ -287,8 +288,7 @@ program
         console.log(`  warning:  HEAD is detached at ${res.commit}`);
       }
     } catch (err) {
-      console.error(`checkout failed: ${errMsg(err)}`);
-      process.exitCode = 1;
+      reportError('checkout failed', err);
     }
   });
 
@@ -305,8 +305,7 @@ program
       console.log(`  tracks:   ${res.trackCount}`);
       console.log('  note:     restored the local snapshot only — Spotify unchanged until `spit push`.');
     } catch (err) {
-      console.error(`revert failed: ${errMsg(err)}`);
-      process.exitCode = 1;
+      reportError('revert failed', err);
     }
   });
 
@@ -357,12 +356,7 @@ program
           `Pushed ${res.trackCount} tracks to "${res.playlistName}" (${res.batches} batch(es)).`,
         );
       } catch (err) {
-        if (err instanceof PushError) {
-          console.error(`push failed: ${err.message}`);
-        } else {
-          console.error(`push failed: ${errMsg(err)}`);
-        }
-        process.exitCode = 1;
+        reportError('push failed', err);
       }
     },
   );
