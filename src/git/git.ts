@@ -111,3 +111,14 @@ export async function gitShortHead(dir: string): Promise<string> {
   const stdout = await git(dir, ['rev-parse', '--short', 'HEAD']);
   return stdout.trim();
 }
+
+/**
+ * Read a file's content at a revision (`git show <rev>:<file>`) — used by spit
+ * diff to compare two snapshots. Returned stdout is NOT trimmed: playlist.jsonl
+ * is newline-significant and the diff parser splits on '\n'. A missing revision
+ * or file makes git exit non-zero, which `git()` already turns into a GitError
+ * carrying git's stderr.
+ */
+export function gitShow(dir: string, rev: string, file: string): Promise<string> {
+  return git(dir, ['show', `${rev}:${file}`]);
+}

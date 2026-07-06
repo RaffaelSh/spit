@@ -11,6 +11,7 @@ import {
   gitLog,
   gitHasStagedChanges,
   gitShortHead,
+  gitShow,
   GitError,
 } from '../src/git/git.js';
 
@@ -110,6 +111,67 @@ test('gitShortHead returns an abbreviated commit hash', async () => {
 
     const short = await gitShortHead(dir);
     assert.match(short, /^[0-9a-f]{7,}$/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// gitShow reads a file's content at a revision — the primitive spit diff needs
+// to compare two snapshots without touching the working tree.
+test('gitShow returns file content at HEAD after a commit', async () => {
+  const dir = await scratch();
+  try {
+    await gitInit(dir);
+    await writeFile(join(dir, 'playlist.jsonl'), '{"id":"t1"}\n', 'utf8');
+    await gitAdd(dir, ['playlist.jsonl']);
+    await gitCommit(dir, 'Initial snapshot');
+
+    const content = await gitShow(dir, 'HEAD', 'playlist.jsonl');
+    // Raw (untrimmed) content — the trailing newline is significant.
+    assert.equal(content, '{"id":"t1"}\n');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// gitShow reads history, not the working tree: HEAD~1 must return the OLDER
+// content even after a second commit rewrote the file.
+test('gitShow reads the older content at HEAD~1 after a second commit', async () => {
+  const dir = await scratch();
+  try {
+    await gitInit(dir);
+    await writeFile(join(dir, 'playlist.jsonl'), '{"id":"t1"}\n', 'utf8');
+    await gitAdd(dir, ['playlist.jsonl']);
+    await gitCommit(dir, 'First snapshot');
+
+    await writeFile(join(dir, 'playlist.jsonl'), '{"id":"t1"}\n{"id":"t2"}\n', 'utf8');
+    await gitAdd(dir, ['playlist.jsonl']);
+    await gitCommit(dir, 'Second snapshot');
+
+    assert.equal(await gitShow(dir, 'HEAD', 'playlist.jsonl'), '{"id":"t1"}\n{"id":"t2"}\n');
+    assert.equal(await gitShow(dir, 'HEAD~1', 'playlist.jsonl'), '{"id":"t1"}\n');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// Negative path: a non-existent revision fails loudly with a GitError rather
+// than silently returning an empty string.
+test('gitShow of a non-existent revision raises GitError', async () => {
+  const dir = await scratch();
+  try {
+    await gitInit(dir);
+    await writeFile(join(dir, 'playlist.jsonl'), '{"id":"t1"}\n', 'utf8');
+    await gitAdd(dir, ['playlist.jsonl']);
+    await gitCommit(dir, 'Initial snapshot');
+
+    await assert.rejects(
+      () => gitShow(dir, 'deadbeef', 'playlist.jsonl'),
+      (err: unknown) => {
+        assert.ok(err instanceof GitError, 'expected a GitError');
+        return true;
+      },
+    );
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
