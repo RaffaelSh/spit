@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
+import { runOAuthFlow, requireClientId } from './auth/oauth.js';
+import { saveTokens, TOKEN_PATH } from './auth/token-store.js';
 
 // --- Spotify auth assumptions (consumed by T02) ---
 // The registered Spotify redirect URI defaults to http://127.0.0.1:8888/callback.
@@ -22,8 +24,16 @@ program
 program
   .command('login')
   .description('Authenticate with Spotify (PKCE)')
-  .action(() => {
-    console.log('spit login: not yet implemented');
+  .action(async () => {
+    try {
+      const clientId = requireClientId();
+      const tokens = await runOAuthFlow(clientId);
+      await saveTokens(tokens);
+      console.log(`\nLogin successful. Token cached at ${TOKEN_PATH} (0600).`);
+    } catch (err) {
+      console.error(`\nlogin failed: ${err instanceof Error ? err.message : String(err)}`);
+      process.exitCode = 1;
+    }
   });
 
 program
