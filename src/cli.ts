@@ -7,6 +7,10 @@ import { commitSnapshot } from './repo/commit.js';
 import { repoStatus } from './repo/status.js';
 import { repoLog } from './repo/log.js';
 import { repoDiff } from './repo/diff.js';
+import { repoBranch } from './repo/branch.js';
+import { repoMerge } from './repo/merge.js';
+import { repoCheckout } from './repo/checkout.js';
+import { repoRevert } from './repo/revert.js';
 import type { TrackRecord } from './spotify/playlists.js';
 
 /** Render a track by name, falling back to uri / id / a "(local track)" marker. */
@@ -152,6 +156,84 @@ program
       }
     } catch (err) {
       console.error(`diff failed: ${errMsg(err)}`);
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command('branch')
+  .description('Create a new branch pointing at the current snapshot (not checked out)')
+  .argument('<name>', 'new branch name')
+  .argument('[dir]', 'repo directory (default: current directory)')
+  .action(async (name: string, dir: string | undefined) => {
+    try {
+      const res = await repoBranch(dir, name);
+      console.log(`Created branch "${res.branch}" in "${res.playlistName}"`);
+    } catch (err) {
+      console.error(`branch failed: ${errMsg(err)}`);
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command('merge')
+  .description('Merge a branch into the current snapshot (git-driven, no auto-resolve)')
+  .argument('<branch>', 'branch to merge into the current branch')
+  .argument('[dir]', 'repo directory (default: current directory)')
+  .action(async (branch: string, dir: string | undefined) => {
+    try {
+      const res = await repoMerge(dir, branch);
+      if (res.merged) {
+        console.log(`Merged ${branch} cleanly.`);
+        return;
+      }
+      console.error('Merge produced conflicts — resolve playlist.jsonl, then git add + git commit:');
+      for (const c of res.conflicts) {
+        const ours = c.ours ? trackLabel(c.ours) : '(missing)';
+        const theirs = c.theirs ? trackLabel(c.theirs) : '(missing)';
+        console.error(`  <<< ours: ${ours}  |  theirs: ${theirs} >>>`);
+      }
+      process.exitCode = 1;
+    } catch (err) {
+      console.error(`merge failed: ${errMsg(err)}`);
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command('checkout')
+  .description('Restore an earlier snapshot into the local working tree')
+  .argument('<ref>', 'branch, tag, or commit to check out')
+  .argument('[dir]', 'repo directory (default: current directory)')
+  .action(async (ref: string, dir: string | undefined) => {
+    try {
+      const res = await repoCheckout(dir, ref);
+      console.log(`Checked out ${res.ref} (${res.commit})`);
+      console.log(`  playlist: ${res.playlistName}`);
+      console.log(`  tracks:   ${res.trackCount}`);
+      if (res.detached) {
+        console.log(`  warning:  HEAD is detached at ${res.commit}`);
+      }
+    } catch (err) {
+      console.error(`checkout failed: ${errMsg(err)}`);
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command('revert')
+  .description('Undo a revision by creating its inverse commit (local snapshot only)')
+  .argument('<ref>', 'revision to revert')
+  .argument('[dir]', 'repo directory (default: current directory)')
+  .action(async (ref: string, dir: string | undefined) => {
+    try {
+      const res = await repoRevert(dir, ref);
+      console.log(`Reverted ${res.ref} → new commit ${res.commit}`);
+      console.log(`  playlist: ${res.playlistName}`);
+      console.log(`  tracks:   ${res.trackCount}`);
+      console.log('  note:     restored the local snapshot only — Spotify unchanged until `spit push`.');
+    } catch (err) {
+      console.error(`revert failed: ${errMsg(err)}`);
       process.exitCode = 1;
     }
   });
