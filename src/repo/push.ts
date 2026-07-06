@@ -59,9 +59,12 @@ export interface PushOptions {
   confirm?: (summary: ChangeSummary, playlistName: string) => Promise<boolean>;
 }
 
+// Spotify's Feb 2026 Web API migration renamed the playlist track resource
+// /tracks → /items; dev-mode apps get 403 on the old path. Body shape ({ uris })
+// is unchanged. PUT replaces the playlist atomically; POST appends a batch.
 const defaultIo: PushIo = {
-  put: (playlistId, uris) => spotifyPut(`/playlists/${playlistId}/tracks`, { uris }),
-  post: (playlistId, uris) => spotifyPost(`/playlists/${playlistId}/tracks`, { uris }),
+  put: (playlistId, uris) => spotifyPut(`/playlists/${playlistId}/items`, { uris }),
+  post: (playlistId, uris) => spotifyPost(`/playlists/${playlistId}/items`, { uris }),
 };
 
 /**

@@ -40,13 +40,17 @@ interface RawTrack {
 }
 
 interface RawTracksPage {
-  items: Array<{ track: RawTrack | null } | null>;
+  // Spotify's Feb 2026 Web API migration renamed the playlist track resource
+  // /tracks → /items and the per-row wrapper key `track` → `item`. Dev-mode
+  // apps get 403 on the old /tracks path, so both must use the new names.
+  items: Array<{ item: RawTrack | null } | null>;
   next: string | null;
 }
 
 // `fields` mask pinned to exactly what serialize.ts persists — trims payload
 // and prevents unrelated API additions from leaking into the snapshot.
-const TRACK_FIELDS = 'items(track(id,uri,name,artists(name),album(name),duration_ms)),next';
+// Post-migration wrapper key is `item` (was `track`).
+const TRACK_FIELDS = 'items(item(id,uri,name,artists(name),album(name),duration_ms)),next';
 
 /** Fetch playlist-level metadata (name, id, description, owner). */
 export async function getPlaylist(id: string): Promise<PlaylistMeta> {
@@ -70,12 +74,12 @@ export async function getPlaylist(id: string): Promise<PlaylistMeta> {
 export async function getPlaylistTracks(id: string): Promise<TrackRecord[]> {
   const records: TrackRecord[] = [];
   let url: string | null =
-    `/playlists/${encodeURIComponent(id)}/tracks?limit=100&fields=${encodeURIComponent(TRACK_FIELDS)}`;
+    `/playlists/${encodeURIComponent(id)}/items?limit=100&fields=${encodeURIComponent(TRACK_FIELDS)}`;
   let page = 0;
   while (url) {
     const data: RawTracksPage = await spotifyGet<RawTracksPage>(url);
-    for (const item of data.items ?? []) {
-      const track = item?.track;
+    for (const entry of data.items ?? []) {
+      const track = entry?.item;
       if (!track) continue; // fully-unavailable/removed rows collapse to null
       records.push(normalizeTrack(track));
     }
