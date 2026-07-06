@@ -43,3 +43,9 @@ vendor/
 coverage/
 .cache/
 tmp/
+
+# ── spit project (agent tooling + local docs, not part of the shipped repo) ──
+.agents/
+.claude/
+skills-lock.json
+docs/
